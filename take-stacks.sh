@@ -36,30 +36,21 @@ for ((i=0; i<$TRACE_COUNT; i++)); do
 		SYS_JIFFPS=$(getconf CLK_TCK) # jiffies ps
 		SYS_CURTIME=$(date +"%s") # time since epo
 		SYS_UPTIME=$(($SYS_CURTIME-$SYS_BOOTTIME)) # uptime in secs
-		# without etimes we'll rely on procfs;
-		# Status information about the process.  This is used by ps(1).  It is defined in the kernel source file fs/proc/array.c
-		#   starttime %llu (was %lu before Linux 2.6)
-                #   The time in jiffies the process started after system boot.
-		# procps calcs;
-		# time = utime+stime/Hertz
-		# etime = seconds_since_boot - (unsigned long)(pp->start_time / Hertz);
-		# unsigned long long Hertz = find_elf_note(AT_CLKTCK);
 		EXINF=$(ps -eLo pcpu,lwp,sgi_p,maj_flt,min_flt,cmd | grep java | grep -v grep | sort -k1,1 -n | while read al; do
 			LWP=$(echo "$al" | awk '{print $2}')
 			if [ -f "/proc/$JAVA_PID/task/$LWP/stat" ]; then
 				nid=$(printf "0x%x\n" $LWP)
-				JIFFTHREADTIME=$(cat /proc/$JAVA_PID/task/$LWP/stat | awk '{print $22}')
-				THREADTIME=$(bc <<< "scale=2; $SYS_UPTIME - ($JIFFTHREADTIME/$SYS_JIFFPS)")
-				TIMESTAMP=$(date -d@$(($SYS_CURTIME-$(echo "$THREADTIME" | sed 's/\..*//'))) +"%Y-%m-%d_%H:%M:%S")
-				# Todo jiff time to time...
-				etimes="$JIFFTHREADTIME $THREADTIME $TIMESTAMP"
+				THREAD_STIME=$(cat /proc/$JAVA_PID/task/$LWP/stat | awk '{print $22}')
+				THREAD_ETIME=$(bc <<< "scale=2; $SYS_UPTIME - ($THREAD_STIME/$SYS_JIFFPS)")
+				TIMESTAMP=$(date -d@$(($SYS_CURTIME-$(echo "$THREAD_ETIME" | sed 's/\..*//'))) +"%Y-%m-%d_%H:%M:%S")
+				etimes="$THREAD_STIME $THREAD_ETIME $TIMESTAMP"
 			else
 				etimes="-1 -1 -1"
 			fi
 			echo "$nid $etimes $al"
 		done)
 	fi
-	jstack -l "$JAVA_PID" > $TMP_DIR/stack-$TRACETIME.out
+	which jcmd &>/dev/null && jcmd $JAVA_PID Thread.print -l >$TMP_DIR/stack-$TRACETIME.out || (which jstack &>/dev/null && jstack -l "$JAVA_PID" > $TMP_DIR/stack-$TRACETIME.out || (echo "No stack" && exit 1))
 	echo "$EXINF" | while read al; do
 		NID=$(echo "$al" | awk '{print $1}')
 		if [ $etimes_valid == true ]; then
