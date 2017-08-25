@@ -93,9 +93,9 @@ for ((i=0; i<$TRACE_COUNT; i++)); do
 		NID=$(echo "$al" | awk '{print $1}')
 		NIDs=$(echo "$NID" | sed 's/0x//')
 		if [ $etimes_valid == true ]; then
-			ESTR="pid=\"$((16#$NIDs))\" $(echo "$al" | awk '{print "pcpu=\"" $4 "\" core=\"" $6 "\" majpage=\"" $7 "\" minpage=\"" $8 "\" syscall=\"" $2 "\" cstack=\"" $3 "\" secs=\"" $9 "\""}')"
+			ESTR="pid=$((16#$NIDs)) $(echo "$al" | awk '{print "pcpu=" $4 " core=" $6 " majpage=" $7 " minpage=" $8 " syscall=" $2 " cstack=" $3 " secs=" $9}')"
 		else
-			ESTR="pid=\"$((16#$NIDs))\" $(echo "$al" | awk '{print "pcpu=\"" $7 "\" core=\"" $9 "\" majpage=\"" $10 "\" minpage=\"" $11 "\" syscall=\"" $2 "\" cstack=\"" $3 "\" secs=\"" $5 "\" time=\"" $6 "\""}')"
+			ESTR="pid=$((16#$NIDs)) $(echo "$al" | awk '{print "pcpu=" $7 " core=" $9 " majpage=" $10 " minpage=" $11 " syscall=" $2 " cstack=" $3 " secs=" $5 " time=" $6}')"
 		fi
 		sed -i "s/nid=$NID/nid=$NID $ESTR/" $TMP_DIR/stack-$TRACETIME.out
 	done
