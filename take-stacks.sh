@@ -30,7 +30,16 @@ fi
 for ((i=0; i<$TRACE_COUNT; i++)); do
 	TRACETIME=$(date +"%s")
 	if [ $etimes_valid == true ]; then
-		EXINF=$(ps -eLo pcpu,lwp,sgi_p,maj_flt,min_flt,etimes,cmd | grep java | grep -v grep | sort -k1,1 -n | while read al; do nid=$(printf "0x%x\n" $(echo "$al" | awk '{print $2}')); echo "$nid $al"; done)
+		EXINF=$(ps -eLo pcpu,lwp,sgi_p,maj_flt,min_flt,etimes,cmd | grep java | grep -v grep | sort -k1,1 -n | while read al; do 
+			LWP=$(echo "$al" | awk '{print $2}')
+			nid=$(printf "0x%x\n" $(echo "$al" | awk '{print $2}'))
+			if [ -f "/proc/$JAVA_PID/task/$LWP/stack" ]; then
+				CSTACK_CMD=$(cat /proc/$JAVA_PID/task/$LWP/stack | head -1 | sed 's/.*\] //;s/+.*//;s/^[_]*//')
+			else
+				CSTACK_CMD=""
+			fi
+			echo "$nid $CSTACK_CMD $al"
+		done)
 	else
 		SYS_BOOTTIME=$(cat /proc/stat | grep btime | awk '{print $2}') # boot time, in seconds since the Epoch (January 1, 1970)
 		SYS_JIFFPS=$(getconf CLK_TCK) # jiffies ps
@@ -47,16 +56,21 @@ for ((i=0; i<$TRACE_COUNT; i++)); do
 			else
 				etimes="-1 -1 -1"
 			fi
-			echo "$nid $etimes $al"
+			if [ -f "/proc/$JAVA_PID/task/$LWP/stack" ]; then
+				CSTACK_CMD=$(cat /proc/$JAVA_PID/task/$LWP/stack | head -1 | sed 's/.*\] //;s/+.*//;s/^[_]*//')
+			else
+				CSTACK_CMD=""
+			fi
+			echo "$nid $CSTACK_CMD $etimes $al"
 		done)
 	fi
 	which jcmd &>/dev/null && jcmd $JAVA_PID Thread.print -l >$TMP_DIR/stack-$TRACETIME.out || (which jstack &>/dev/null && jstack -l "$JAVA_PID" > $TMP_DIR/stack-$TRACETIME.out || (echo "No stack" && exit 1))
 	echo "$EXINF" | while read al; do
 		NID=$(echo "$al" | awk '{print $1}')
 		if [ $etimes_valid == true ]; then
-			ESTR="$(echo "$al" | awk '{print "pcpu=" $2 " core=" $4 " page=" $5 " mpage=" $6 " secs=" $7}')"
+			ESTR="$(echo "$al" | awk '{print "pcpu=" $3 " core=" $5 " page=" $6 " mpage=" $7 " cstack=\"" $2 "\" secs=" $8}')"
 		else
-			ESTR="$(echo "$al" | awk '{print "pcpu=" $5 " core=" $7 " page=" $8 " mpage=" $9 " jifftime=" $2 " secs=" $3 " time=" $4}')"
+			ESTR="$(echo "$al" | awk '{print "pcpu=" $6 " core=" $8 " page=" $9 " mpage=" $10 " cstack=\"" $2 "\" jifftime=" $3 " secs=" $4 " time=" $5}')"
 		fi
 		sed -i "s/nid=$NID/nid=$NID $ESTR/" $TMP_DIR/stack-$TRACETIME.out
 	done
