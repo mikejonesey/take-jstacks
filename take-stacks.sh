@@ -35,10 +35,22 @@ for ((i=0; i<$TRACE_COUNT; i++)); do
 			nid=$(printf "0x%x\n" $(echo "$al" | awk '{print $2}'))
 			if [ -f "/proc/$JAVA_PID/task/$LWP/stack" ]; then
 				CSTACK_CMD=$(cat /proc/$JAVA_PID/task/$LWP/stack | head -1 | sed 's/.*\] //;s/+.*//;s/^[_]*//')
+				if [ -z "$CSTACK_CMD" ]; then
+					CSTACK_CMD="c-2"
+				fi
 			else
-				CSTACK_CMD=""
+				CSTACK_CMD="c-1"
 			fi
-			echo "$nid $CSTACK_CMD $al"
+			if [ -f "/proc/$JAVA_PID/task/$LWP/syscall" ]; then
+				syscall=$(cat /proc/$JAVA_PID/task/$LWP/syscall | awk '{print $1}')
+				syscall_cmd=$(grep " $syscall$" /usr/include/asm/unistd_64.h | awk '{print $2}' | sed 's/.*_//;s/ //')
+				if [ -z "$syscall_cmd" ]; then
+					syscall_cmd="s-2"
+				fi
+			else
+				syscall_cmd="s-1"
+			fi
+			echo "$nid $syscall_cmd $cstack_cmd $al"
 		done)
 	else
 		SYS_BOOTTIME=$(cat /proc/stat | grep btime | awk '{print $2}') # boot time, in seconds since the Epoch (January 1, 1970)
@@ -57,20 +69,33 @@ for ((i=0; i<$TRACE_COUNT; i++)); do
 				etimes="-1 -1 -1"
 			fi
 			if [ -f "/proc/$JAVA_PID/task/$LWP/stack" ]; then
-				CSTACK_CMD=$(cat /proc/$JAVA_PID/task/$LWP/stack | head -1 | sed 's/.*\] //;s/+.*//;s/^[_]*//')
+				cstack_cmd=$(cat /proc/$JAVA_PID/task/$LWP/stack | head -1 | sed 's/.*\] //;s/+.*//;s/^[_]*//')
+				if [ -z "$cstack_cmd" ]; then
+					cstack_cmd="c-2"
+				fi
 			else
-				CSTACK_CMD=""
+				cstack_cmd="c-1"
 			fi
-			echo "$nid $CSTACK_CMD $etimes $al"
+			if [ -f "/proc/$JAVA_PID/task/$LWP/syscall" ]; then
+				syscall=$(cat /proc/$JAVA_PID/task/$LWP/syscall | awk '{print $1}')
+				syscall_cmd=$(grep " $syscall$" /usr/include/asm/unistd_64.h | awk '{print $2}' | sed 's/.*_//;s/ //')
+				if [ -z "$syscall_cmd" ]; then
+					syscall_cmd="s-2"
+				fi
+			else
+				syscall_cmd="s-1"
+			fi
+			echo "$nid $syscall_cmd $cstack_cmd $etimes $al"
 		done)
 	fi
 	which jcmd &>/dev/null && jcmd $JAVA_PID Thread.print -l >$TMP_DIR/stack-$TRACETIME.out || (which jstack &>/dev/null && jstack -l "$JAVA_PID" > $TMP_DIR/stack-$TRACETIME.out || (echo "No stack" && exit 1))
 	echo "$EXINF" | while read al; do
 		NID=$(echo "$al" | awk '{print $1}')
+		NIDs=$(echo "$NID" | sed 's/0x//')
 		if [ $etimes_valid == true ]; then
-			ESTR="$(echo "$al" | awk '{print "pcpu=" $3 " core=" $5 " page=" $6 " mpage=" $7 " cstack=\"" $2 "\" secs=" $8}')"
+			ESTR="pid=\"$((16#$NIDs))\" $(echo "$al" | awk '{print "pcpu=\"" $4 "\" core=\"" $6 "\" majpage=\"" $7 "\" minpage=\"" $8 "\" syscall=\"" $2 "\" cstack=\"" $3 "\" secs=\"" $9 "\""}')"
 		else
-			ESTR="$(echo "$al" | awk '{print "pcpu=" $6 " core=" $8 " page=" $9 " mpage=" $10 " cstack=\"" $2 "\" jifftime=" $3 " secs=" $4 " time=" $5}')"
+			ESTR="pid=\"$((16#$NIDs))\" $(echo "$al" | awk '{print "pcpu=\"" $7 "\" core=\"" $9 "\" majpage=\"" $10 "\" minpage=\"" $11 "\" syscall=\"" $2 "\" cstack=\"" $3 "\" secs=\"" $5 "\" time=\"" $6 "\""}')"
 		fi
 		sed -i "s/nid=$NID/nid=$NID $ESTR/" $TMP_DIR/stack-$TRACETIME.out
 	done
